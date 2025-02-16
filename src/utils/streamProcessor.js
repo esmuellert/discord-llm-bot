@@ -1,9 +1,9 @@
 export const processStream = async (sses, message, typingInterval) => {
   let isThinking = false;
-  let think = "";
-  let responseMessage = "";
+  let think = '';
+  let responseMessage = '';
   let lastMessage;
-  let completeMessage = "";
+  let completeMessage = '';
   let thinkingStart;
 
   const isInsideCodeBlock = (text) => {
@@ -13,7 +13,7 @@ export const processStream = async (sses, message, typingInterval) => {
 
   const findLastCompleteBlock = (text) => {
     if (!isInsideCodeBlock(text)) return text.length;
-    
+
     let lastComplete = text.lastIndexOf('```');
     while (lastComplete > 0 && isInsideCodeBlock(text.substring(0, lastComplete))) {
       lastComplete = text.lastIndexOf('```', lastComplete - 1);
@@ -26,7 +26,7 @@ export const processStream = async (sses, message, typingInterval) => {
       const splitPoint = findLastCompleteBlock(currentText);
       const nextMessage = currentText.substring(splitPoint) + newContent;
       const updatedCurrentText = currentText.substring(0, splitPoint);
-      
+
       await lastMsg.edit(updatedCurrentText);
       const newLastMsg = await message.channel.send(nextMessage);
       return { text: nextMessage, lastMessage: newLastMsg };
@@ -38,31 +38,31 @@ export const processStream = async (sses, message, typingInterval) => {
   };
 
   for await (const event of sses) {
-    if (event.data === "[DONE]") {
+    if (event.data === '[DONE]') {
       await lastMessage.edit(responseMessage);
       clearInterval(typingInterval);
       return completeMessage;
     }
 
     for (const choice of JSON.parse(event.data).choices) {
-      const content = choice.delta?.content ?? "";
+      const content = choice.delta?.content ?? '';
       completeMessage += content;
 
-      if (content === "<think>") {
+      if (content === '<think>') {
         thinkingStart = new Date();
         isThinking = true;
-        think = "## Thinking...\n";
+        think = '## Thinking...\n';
         lastMessage = await message.channel.send(think);
         continue;
       }
 
-      if (content === "</think>") {
+      if (content === '</think>') {
         isThinking = false;
         const thinkingTime = new Date().getTime() - thinkingStart.getTime();
-        responseMessage = "## Response:\n";
+        responseMessage = '## Response:\n';
         if (think) {
           await lastMessage.edit(
-            think.replace("## Thinking...", `## Thinking for ${thinkingTime / 1000}s`)
+            think.replace('## Thinking...', `## Thinking for ${thinkingTime / 1000}s`)
           );
         }
         lastMessage = await message.channel.send(responseMessage);
@@ -71,7 +71,7 @@ export const processStream = async (sses, message, typingInterval) => {
 
       if (!content) continue;
 
-      if (process.env.NODE_ENV === "development") {
+      if (process.env.NODE_ENV === 'development') {
         process.stdout.write(content);
       }
 
@@ -97,7 +97,7 @@ export const processStream = async (sses, message, typingInterval) => {
           if (lastMessage) {
             await lastMessage.edit(responseMessage);
           } else {
-            lastMessage = await message.channel.send("## Response:\n" + responseMessage);
+            lastMessage = await message.channel.send('## Response:\n' + responseMessage);
           }
         }
       } else {
@@ -109,5 +109,4 @@ export const processStream = async (sses, message, typingInterval) => {
   }
 };
 
-const shouldUpdateMessage = (message) =>
-  message.length % 100 > 0 && message.length % 100 < 5;
+const shouldUpdateMessage = (message) => message.length % 100 > 0 && message.length % 100 < 5;
