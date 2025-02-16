@@ -6,6 +6,37 @@ export const processStream = async (sses, message, typingInterval) => {
   let completeMessage = "";
   let thinkingStart;
 
+  const isInsideCodeBlock = (text) => {
+    const matches = text.match(/```/g);
+    return matches ? matches.length % 2 === 1 : false;
+  };
+
+  const findLastCompleteBlock = (text) => {
+    if (!isInsideCodeBlock(text)) return text.length;
+    
+    let lastComplete = text.lastIndexOf('```');
+    while (lastComplete > 0 && isInsideCodeBlock(text.substring(0, lastComplete))) {
+      lastComplete = text.lastIndexOf('```', lastComplete - 1);
+    }
+    return lastComplete > 0 ? lastComplete : 0;
+  };
+
+  const handleMessageSplit = async (currentText, newContent, lastMsg) => {
+    if (isInsideCodeBlock(currentText + newContent)) {
+      const splitPoint = findLastCompleteBlock(currentText);
+      const nextMessage = currentText.substring(splitPoint) + newContent;
+      const updatedCurrentText = currentText.substring(0, splitPoint);
+      
+      await lastMsg.edit(updatedCurrentText);
+      const newLastMsg = await message.channel.send(nextMessage);
+      return { text: nextMessage, lastMessage: newLastMsg };
+    } else {
+      await lastMsg.edit(currentText);
+      const newLastMsg = await message.channel.send(newContent);
+      return { text: newContent, lastMessage: newLastMsg };
+    }
+  };
+
   for await (const event of sses) {
     if (event.data === "[DONE]") {
       await lastMessage.edit(responseMessage);
@@ -52,9 +83,9 @@ export const processStream = async (sses, message, typingInterval) => {
             await lastMessage.edit(think);
           }
         } else {
-          await lastMessage.edit(think);
-          think = content;
-          lastMessage = await message.channel.send(content);
+          const result = await handleMessageSplit(think, content, lastMessage);
+          think = result.text;
+          lastMessage = result.lastMessage;
         }
         continue;
       }
@@ -70,9 +101,9 @@ export const processStream = async (sses, message, typingInterval) => {
           }
         }
       } else {
-        await lastMessage.edit(responseMessage);
-        responseMessage = content;
-        lastMessage = await message.channel.send(content);
+        const result = await handleMessageSplit(responseMessage, content, lastMessage);
+        responseMessage = result.text;
+        lastMessage = result.lastMessage;
       }
     }
   }
