@@ -4,6 +4,7 @@ import ModelClient from "@azure-rest/ai-inference";
 import { AzureKeyCredential } from "@azure/core-auth";
 import dotenv from "dotenv";
 import { createSseStream } from "@azure/core-sse";
+import http from "http";
 
 dotenv.config();
 
@@ -119,6 +120,10 @@ discordClient.on("messageCreate", async (message) => {
 // Log in to Discord with your bot token
 discordClient.login(DISCORD_TOKEN);
 
+http.createServer((req, res) => {
+  res.end('Bot is running');
+}).listen(process.env.PORT || 3000);
+
 const processStream = async (sses, message) => {
   let isThinking = false;
   let think = "";
@@ -153,7 +158,9 @@ const processStream = async (sses, message) => {
           );
         lastMessage = await message.channel.send(responseMessage);
       } else if (content) {
-        process.stdout.write(content);
+        if (process.env.NODE_ENV === "development") {
+          process.stdout.write(content);
+        }
         if (isThinking) {
           if ((think + content).length < 2000) {
             think += content;
@@ -194,4 +201,4 @@ const throwEmptyError = (content) => {
 };
 
 const shouldUpdateMessage = (message) =>
-  message.length % 50 > 0 && message.length % 50 < 20;
+  message.length % 300 > 0 && message.length % 300 < 20;

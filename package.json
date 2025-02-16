@@ -4,8 +4,8 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "dev": "nodemon index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "NODE_ENV=development nodemon index.js",
+    "start": "NODE_ENV=production pm2-runtime start index.js --no-autorestart"
   },
   "keywords": [],
   "author": "",
@@ -17,7 +17,8 @@
     "@azure/core-sse": "^2.1.3",
     "axios": "^1.7.9",
     "discord.js": "^14.18.0",
-    "dotenv": "^16.4.7"
+    "dotenv": "^16.4.7",
+    "pm2": "^5.4.3"
   },
   "devDependencies": {
     "nodemon": "^3.1.9"
