@@ -3,6 +3,7 @@ import { Client, GatewayIntentBits, EmbedBuilder } from "discord.js";
 import ModelClient from "@azure-rest/ai-inference";
 import { AzureKeyCredential } from "@azure/core-auth";
 import dotenv from "dotenv";
+import { createSseStream } from "@azure/core-sse";
 
 dotenv.config();
 
@@ -43,9 +44,25 @@ discordClient.on("messageCreate", async (message) => {
   // Ignore messages from bots
   if (message.author.bot) return;
 
-  // Check if the message starts with the command prefix (e.g., "!chat")
-  // New user
   const username = message.author.username;
+
+  // Clear chat history
+  if (message.content.startsWith("/clear")) {
+    chatHistory[username] = [systemMessage];
+    message.channel.send("Chat history cleared.");
+    return;
+  }
+
+  if (message.content.trim() === "/history") {
+    const history = chatHistory?.[username]?.filter((msg) => msg.role === "user")?.map((msg) => msg.content).join("\n");
+    const embeds = new EmbedBuilder()
+      .setTitle("Chat History (User Question Only)")
+      .setDescription(history?.length > 0 ? history : "## No chat history found.");
+    await message.channel.send({ embeds: [embeds] });
+    return;
+  }
+
+  // New user
   if (!chatHistory[username]) {
     chatHistory[username] = [systemMessage];
   }
@@ -75,26 +92,76 @@ discordClient.on("messageCreate", async (message) => {
     const response = await azureClient.path("chat/completions").post({
       body: {
         messages: chatHistory[username],
-        max_tokens: 4000,
         model: DEPLOYMENT_NAME,
+        stream: true
       },
-    });
-
-    // Stop typing indicator before sending the reply
-    clearInterval(typingInterval);
-
-    // Log the response
-    console.log(JSON.stringify(response, null, 2));
-
-    // Add the assistant's response to the chat history
-    chatHistory[username].push(response.body.choices[0].message);
-
-    // Send the response as a message to discord
-    const llmReply = JSON.stringify(response.body.choices[0].message.content);
-    const embeds = createDiscordMessages(llmReply);
-    for (const embed of embeds) {
-      await message.channel.send({ embeds: [embed] });
+    }).asNodeStream();
+    const stream = response.body;
+    const sses = createSseStream(stream);
+    let isThinking = false;
+    let think = "";
+    let responseMessage = "";
+    let lastMessage;
+    for await (const event of sses) {
+        if (event.data === "[DONE]") {
+            lastMessage.edit(responseMessage);
+            clearInterval(typingInterval);
+            return;
+        }
+        for (const choice of (JSON.parse(event.data)).choices) {
+            const content = choice.delta?.content ?? "";
+            
+            if (content === "<think>") {
+                isThinking = true;
+                think = "## Thinking...\n";
+                lastMessage = await message.channel.send(think);
+            } else if (content === "</think>") {
+                isThinking = false;
+                responseMessage = "## Response:\n";
+                lastMessage.edit(think);
+                lastMessage = await message.channel.send(responseMessage);
+            } else if (content) {
+                process.stdout.write(content);
+                if (isThinking) {
+                    if ((think + content).length < 2000) {
+                        think += content;
+                        if (think.length % 50 > 0 && think.length % 50 < 10) {
+                            await lastMessage.edit(think);
+                        }
+                    } else {
+                        think = content;
+                        lastMessage = await message.channel.send(think);
+                    }
+                } else {
+                    if ((responseMessage + content).length < 2000) {
+                        responseMessage += content;
+                        if (responseMessage.length % 50 > 0 && responseMessage.length % 50 < 10) {
+                            await lastMessage.edit(responseMessage);
+                        }
+                    } else {
+                        responseMessage = content;
+                        lastMessage = await message.channel.send(responseMessage);
+                    }
+                }
+            }
+        }
     }
+
+    // // Stop typing indicator before sending the reply
+    // clearInterval(typingInterval);
+
+    // // Log the response
+    // console.log(JSON.stringify(response, null, 2));
+
+    // // Add the assistant's response to the chat history
+    // chatHistory[username].push(response.body.choices[0].message);
+
+    // // Send the response as a message to discord
+    // const llmReply = JSON.stringify(response.body.choices[0].message.content);
+    // const embeds = createDiscordMessages(llmReply);
+    // for (const embed of embeds) {
+    //   await message.channel.send({ embeds: [embed] });
+    // }
   } catch (error) {
     clearInterval(typingInterval);
     console.error("Error communicating with the LLM API:", error);
