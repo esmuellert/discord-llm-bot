@@ -45,6 +45,24 @@ let thinkingStart;
 
 // Listen for messages on Discord
 discordClient.on("messageCreate", async (message) => {
+  try {
+    await defaultMessageHandler(message);
+  } catch (error) {
+    console.error("Error processing message:", error);
+    message.channel.send("There was an error processing your message.");
+  }
+});
+
+// Log in to Discord with your bot token
+discordClient.login(DISCORD_TOKEN);
+
+http
+  .createServer((req, res) => {
+    res.end("Bot is running");
+  })
+  .listen(process.env.PORT || 3000);
+
+const defaultMessageHandler = async (message) => {
   // Ignore messages from bots
   if (message.author.bot) return;
 
@@ -147,16 +165,7 @@ discordClient.on("messageCreate", async (message) => {
     console.error("Error communicating with the LLM API:", error);
     message.channel.send("There was an error contacting the LLM API.");
   }
-});
-
-// Log in to Discord with your bot token
-discordClient.login(DISCORD_TOKEN);
-
-http
-  .createServer((req, res) => {
-    res.end("Bot is running");
-  })
-  .listen(process.env.PORT || 3000);
+};
 
 const processStream = async (sses, message) => {
   let isThinking = false;
