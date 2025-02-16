@@ -38,6 +38,7 @@ const systemMessage = {
     "You are a helpful assistant. Always use your reasoning capability which provides the reasoning content in <think> tags to respond to the user.",
 };
 const chatHistory = {};
+let typingInterval;
 
 // Listen for messages on Discord
 discordClient.on("messageCreate", async (message) => {
@@ -54,10 +55,15 @@ discordClient.on("messageCreate", async (message) => {
   }
 
   if (message.content.trim() === "/history") {
-    const history = chatHistory?.[username]?.filter((msg) => msg.role === "user")?.map((msg) => msg.content).join("\n");
+    const history = chatHistory?.[username]
+      ?.filter((msg) => msg.role === "user")
+      ?.map((msg) => msg.content)
+      .join("\n");
     const embeds = new EmbedBuilder()
       .setTitle("Chat History (User Question Only)")
-      .setDescription(history?.length > 0 ? history : "## No chat history found.");
+      .setDescription(
+        history?.length > 0 ? history : "## No chat history found."
+      );
     await message.channel.send({ embeds: [embeds] });
     return;
   }
@@ -77,7 +83,7 @@ discordClient.on("messageCreate", async (message) => {
 
   // Start the typing indicator by setting an interval
   message.channel.sendTyping().catch(console.error);
-  const typingInterval = setInterval(() => {
+  typingInterval = setInterval(() => {
     message.channel.sendTyping().catch(console.error);
   }, 4000); // Adjust interval as needed (e.g., every 4 seconds)
 
@@ -89,79 +95,20 @@ discordClient.on("messageCreate", async (message) => {
 
   try {
     // Call the Azure LLM API using the Azure SDK
-    const response = await azureClient.path("chat/completions").post({
-      body: {
-        messages: chatHistory[username],
-        model: DEPLOYMENT_NAME,
-        stream: true
-      },
-    }).asNodeStream();
+    const response = await azureClient
+      .path("chat/completions")
+      .post({
+        body: {
+          messages: chatHistory[username],
+          model: DEPLOYMENT_NAME,
+          stream: true,
+        },
+      })
+      .asNodeStream();
     const stream = response.body;
     const sses = createSseStream(stream);
-    let isThinking = false;
-    let think = "";
-    let responseMessage = "";
-    let lastMessage;
-    for await (const event of sses) {
-        if (event.data === "[DONE]") {
-            lastMessage.edit(responseMessage);
-            clearInterval(typingInterval);
-            return;
-        }
-        for (const choice of (JSON.parse(event.data)).choices) {
-            const content = choice.delta?.content ?? "";
-            
-            if (content === "<think>") {
-                isThinking = true;
-                think = "## Thinking...\n";
-                lastMessage = await message.channel.send(think);
-            } else if (content === "</think>") {
-                isThinking = false;
-                responseMessage = "## Response:\n";
-                lastMessage.edit(think);
-                lastMessage = await message.channel.send(responseMessage);
-            } else if (content) {
-                process.stdout.write(content);
-                if (isThinking) {
-                    if ((think + content).length < 2000) {
-                        think += content;
-                        if (think.length % 50 > 0 && think.length % 50 < 10) {
-                            await lastMessage.edit(think);
-                        }
-                    } else {
-                        think = content;
-                        lastMessage = await message.channel.send(think);
-                    }
-                } else {
-                    if ((responseMessage + content).length < 2000) {
-                        responseMessage += content;
-                        if (responseMessage.length % 50 > 0 && responseMessage.length % 50 < 10) {
-                            await lastMessage.edit(responseMessage);
-                        }
-                    } else {
-                        responseMessage = content;
-                        lastMessage = await message.channel.send(responseMessage);
-                    }
-                }
-            }
-        }
-    }
-
-    // // Stop typing indicator before sending the reply
-    // clearInterval(typingInterval);
-
-    // // Log the response
-    // console.log(JSON.stringify(response, null, 2));
-
-    // // Add the assistant's response to the chat history
-    // chatHistory[username].push(response.body.choices[0].message);
-
-    // // Send the response as a message to discord
-    // const llmReply = JSON.stringify(response.body.choices[0].message.content);
-    // const embeds = createDiscordMessages(llmReply);
-    // for (const embed of embeds) {
-    //   await message.channel.send({ embeds: [embed] });
-    // }
+    const content = await processStream(sses, message);
+    chatHistory[username].push({ role: "assistant", content });
   } catch (error) {
     clearInterval(typingInterval);
     console.error("Error communicating with the LLM API:", error);
@@ -172,24 +119,69 @@ discordClient.on("messageCreate", async (message) => {
 // Log in to Discord with your bot token
 discordClient.login(DISCORD_TOKEN);
 
-const createDiscordMessages = (message) => {
-  const toDiscordMessages = (content, think = false) =>
-    content === ""
-      ? []
-      : content
-          .match(/.{1,2000}/g)
-          .map((thunk) =>
-            new EmbedBuilder()
-              .setTitle(think ? "Think" : "Reply")
-              .setDescription(`${thunk.replace(/\\n/g, "\n")}`)
-          );
+const processStream = async (sses, message) => {
+  let isThinking = false;
+  let think = "";
+  let responseMessage = "";
+  let lastMessage;
+  let completeMessage = "";
+  for await (const event of sses) {
+    if (event.data === "[DONE]") {
+      lastMessage.edit(responseMessage);
+      clearInterval(typingInterval);
+      return completeMessage;
+    }
+    for (const choice of JSON.parse(event.data).choices) {
+      const content = choice.delta?.content ?? "";
+      completeMessage += content;
 
-  message = message.substring(1, message.length - 1);
-  const thinkRegex = /<think>(.*?)<\/think>/s;
-  const thinkMatch = message.match(thinkRegex);
-  const think = thinkMatch ? thinkMatch[1] : "";
-  const content = thinkMatch
-    ? message.slice(thinkMatch.index + thinkMatch[0].length)
-    : message;
-  return [...toDiscordMessages(think, true), ...toDiscordMessages(content)];
+      if (content === "<think>") {
+        isThinking = true;
+        think = "## Thinking...\n";
+        lastMessage = await message.channel.send(think);
+      } else if (content === "</think>") {
+        isThinking = false;
+        responseMessage = "## Response:\n";
+        lastMessage.edit(think);
+        lastMessage = await message.channel.send(responseMessage);
+      } else if (content) {
+        process.stdout.write(content);
+        if (isThinking) {
+          if ((think + content).length < 2000) {
+            think += content;
+            if (think.length % 50 > 0 && think.length % 50 < 10) {
+              await lastMessage.edit(think);
+            }
+          } else {
+            think = content;
+            lastMessage = await message.channel.send(think);
+          }
+        } else {
+          if ((responseMessage + content).length < 2000) {
+            responseMessage += content;
+            if (
+              responseMessage.length % 50 > 0 &&
+              responseMessage.length % 50 < 10
+            ) {
+              if (lastMessage) {
+                await lastMessage.edit(responseMessage);
+              } else {
+                responseMessage = "## Response:\n" + responseMessage;
+                lastMessage = await message.channel.send(responseMessage);
+              }
+            }
+          } else {
+            responseMessage = content;
+            lastMessage = await message.channel.send(responseMessage);
+          }
+        }
+      }
+    }
+  }
+};
+
+const throwEmptyError = (content) => {
+  if (!content) {
+    throw new Error("Response is empty");
+  }
 };
