@@ -141,7 +141,11 @@ const defaultMessageHandler = async (message) => {
   // Construct the messages array for the chat request
   chatHistory[username].push({ role: "user", content: userPrompt });
 
-  console.log(`user ${username}: `, userPrompt);
+  if (process.env.NODE_ENV === "development") {
+    console.log(`user ${username}: `, userPrompt);
+  } else {
+    console.log(`user ${username}: [hidden]`);
+  }
   console.log("chat history length: ", chatHistory[username].length);
 
   try {
