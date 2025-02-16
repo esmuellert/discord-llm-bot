@@ -34,11 +34,11 @@ discordClient.once("ready", () => {
 
 const systemMessage = {
   role: "system",
-  content:
-    "You are a helpful assistant. Always use your reasoning capability which provides the reasoning content in <think> tags to respond to the user.",
+  content: `You are a helpful assistant. You must use your reasoning capability to provide answer to users. Your reasoning content is included between <think> and </think>.`,
 };
 const chatHistory = {};
 let typingInterval;
+let thinkingStart;
 
 // Listen for messages on Discord
 discordClient.on("messageCreate", async (message) => {
@@ -136,33 +136,39 @@ const processStream = async (sses, message) => {
       completeMessage += content;
 
       if (content === "<think>") {
+        thinkingStart = new Date();
         isThinking = true;
         think = "## Thinking...\n";
         lastMessage = await message.channel.send(think);
       } else if (content === "</think>") {
         isThinking = false;
+        const thinkingTime = new Date() - thinkingStart;
         responseMessage = "## Response:\n";
-        lastMessage.edit(think);
+        think &&
+          lastMessage.edit(
+            think.replace(
+              "## Thinking...",
+              `## Thinking for ${thinkingTime / 1000}s`
+            )
+          );
         lastMessage = await message.channel.send(responseMessage);
       } else if (content) {
         process.stdout.write(content);
         if (isThinking) {
           if ((think + content).length < 2000) {
             think += content;
-            if (think.length % 50 > 0 && think.length % 50 < 10) {
+            if (shouldUpdateMessage(think)) {
               await lastMessage.edit(think);
             }
           } else {
+            think && lastMessage.edit(think);
             think = content;
             lastMessage = await message.channel.send(think);
           }
         } else {
           if ((responseMessage + content).length < 2000) {
             responseMessage += content;
-            if (
-              responseMessage.length % 50 > 0 &&
-              responseMessage.length % 50 < 10
-            ) {
+            if (shouldUpdateMessage(responseMessage)) {
               if (lastMessage) {
                 await lastMessage.edit(responseMessage);
               } else {
@@ -171,6 +177,7 @@ const processStream = async (sses, message) => {
               }
             }
           } else {
+            responseMessage && lastMessage.edit(responseMessage);
             responseMessage = content;
             lastMessage = await message.channel.send(responseMessage);
           }
@@ -185,3 +192,6 @@ const throwEmptyError = (content) => {
     throw new Error("Response is empty");
   }
 };
+
+const shouldUpdateMessage = (message) =>
+  message.length % 50 > 0 && message.length % 50 < 20;
