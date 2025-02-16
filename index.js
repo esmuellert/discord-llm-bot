@@ -56,6 +56,69 @@ discordClient.on("messageCreate", async (message) => {
   }
 });
 
+discordClient.on("interactionCreate", async (interaction) => {
+  if (!interaction.isCommand()) return;
+
+  const username = interaction.user.username;
+
+  // Clear chat history
+  if (interaction.commandName === "clear") {
+    chatHistory[username] = [systemMessage];
+    await interaction.reply({ content: "Chat history cleared." });
+    console.log(`Chat history cleared for ${username}`);
+    return;
+  }
+
+  if (interaction.commandName === "history") {
+    const history = chatHistory?.[username]
+      ?.filter((msg) => msg.role === "user")
+      ?.map((msg) => msg.content)
+      .join("\n");
+    const embeds = new EmbedBuilder()
+      .setTitle("Chat History (User Question Only)")
+      .setDescription(
+        history?.length > 0 ? history : "## No chat history found."
+      );
+    await interaction.reply({ embeds: [embeds] });
+    console.log(`Chat history sent for ${username}`);
+    return;
+  }
+
+  if (interaction.commandName === "delete_direct_message") {
+    try {
+      // Open a DM channel with the user
+      const dmChannel = await interaction.user.createDM();
+
+      // Fetch the most recent messages from the DM channel
+      const messages = await dmChannel.messages.fetch({ limit: 100 });
+
+      // Find the specific message sent by the bot
+      const botMessage = messages.find(
+        (msg) => msg.author.id === discordClient.user.id
+      );
+
+      if (botMessage) {
+        // Delete the bot's message
+        await botMessage.delete();
+        await interaction.reply({
+          content: "Previous DM deleted.",
+          ephemeral: true,
+        });
+        console.log(`Previous DM deleted for ${username}`);
+      } else {
+        await interaction.reply({
+          content: "No previous DM found.",
+          ephemeral: true,
+        });
+        console.log(`No previous DM found. for ${username}`);
+      }
+    } catch (error) {
+      console.error("Failed to delete the previous DM:", error);
+    }
+    return;
+  }
+});
+
 // Log in to Discord with your bot token
 discordClient.login(DISCORD_TOKEN);
 
@@ -70,57 +133,11 @@ const defaultMessageHandler = async (message) => {
   if (message.author.bot) return;
 
   const username = message.author.username;
-
-  // Clear chat history
-  if (message.content.startsWith("/clear")) {
-    chatHistory[username] = [systemMessage];
-    message.channel.send("Chat history cleared.");
-    console.log(`Chat history cleared for ${username}`);
-    return;
-  }
-
-  if (message.content.trim() === "/history") {
-    const history = chatHistory?.[username]
-      ?.filter((msg) => msg.role === "user")
-      ?.map((msg) => msg.content)
-      .join("\n");
-    const embeds = new EmbedBuilder()
-      .setTitle("Chat History (User Question Only)")
-      .setDescription(
-        history?.length > 0 ? history : "## No chat history found."
-      );
-    await message.channel.send({ embeds: [embeds] });
-    console.log(`Chat history sent for ${username}`);
-    return;
-  }
-
-  if (message.content.trim() === "/deleteDM") {
-    try {
-      // Open a DM channel with the user
-      const dmChannel = await message.author.createDM();
-
-      // Fetch the most recent messages from the DM channel
-      const messages = await dmChannel.messages.fetch({ limit: 100 });
-
-      // Find the specific message sent by the bot
-      const botMessage = messages.find(
-        (msg) => msg.author.id === discordClient.user.id
-      );
-
-      if (botMessage) {
-        // Delete the bot's message
-        await botMessage.delete();
-        if (process.env.NODE_ENV === "development") {
-          console.log(`Previous DM deleted for ${username}`);
-        }
-      } else {
-        if (process.env.NODE_ENV === "development") {
-          console.log(`No previous DM found. for ${username}`);
-        }
-      }
-    } catch (error) {
-      console.error("Failed to delete the previous DM:", error);
-    }
+  if (
+    message.content.startsWith("/history") ||
+    message.content.startsWith("/clear") ||
+    message.content.startsWith("/delete_direct_message")
+  ) {
     return;
   }
 
@@ -187,10 +204,10 @@ const processStream = async (sses, message) => {
   let responseMessage = "";
   let lastMessage;
   let completeMessage = "";
-  
+
   for await (const event of sses) {
     if (event.data === "[DONE]") {
-      lastMessage.edit(responseMessage);
+      await lastMessage.edit(responseMessage);
       clearInterval(typingInterval);
       return completeMessage;
     }
@@ -208,12 +225,12 @@ const processStream = async (sses, message) => {
         const thinkingTime = new Date() - thinkingStart;
         responseMessage = "## Response:\n";
         think &&
-          lastMessage.edit(
+          (await lastMessage.edit(
             think.replace(
               "## Thinking...",
               `## Thinking for ${thinkingTime / 1000}s`
             )
-          );
+          ));
         lastMessage = await message.channel.send(responseMessage);
       } else if (content) {
         if (process.env.NODE_ENV === "development") {
@@ -226,7 +243,7 @@ const processStream = async (sses, message) => {
               await lastMessage.edit(think);
             }
           } else {
-            think && lastMessage.edit(think);
+            think && (await lastMessage.edit(think));
             think = content;
             lastMessage = await message.channel.send(think);
           }
@@ -242,7 +259,7 @@ const processStream = async (sses, message) => {
               }
             }
           } else {
-            responseMessage && lastMessage.edit(responseMessage);
+            responseMessage && (await lastMessage.edit(responseMessage));
             responseMessage = content;
             lastMessage = await message.channel.send(responseMessage);
           }
