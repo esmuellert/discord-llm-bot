@@ -27,7 +27,7 @@ export const processStream = async (sses, message, typingInterval) => {
 
       if (content === "</think>") {
         isThinking = false;
-        const thinkingTime = new Date() - thinkingStart;
+        const thinkingTime = new Date().getTime() - thinkingStart.getTime();
         responseMessage = "## Response:\n";
         if (think) {
           await lastMessage.edit(
