@@ -7,10 +7,15 @@
     "dev": "NODE_ENV=development nodemon index.js",
     "start": "NODE_ENV=production pm2-runtime start index.js --no-autorestart"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "discord",
+    "bot",
+    "llm",
+    "azure"
+  ],
+  "author": "Yanuo Ma",
   "license": "ISC",
-  "description": "",
+  "description": "A Discord bot that uses Azure AI LLMs to generate responses.",
   "dependencies": {
     "@azure-rest/ai-inference": "^1.0.0-beta.5",
     "@azure/core-auth": "^1.9.0",
