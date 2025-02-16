@@ -24,11 +24,11 @@ const azureClient = new ModelClient(
 const discordClient = new Client({
   intents: [
     GatewayIntentBits.DirectMessages, // Required for DMs
-    GatewayIntentBits.Guilds, 
-    GatewayIntentBits.GuildMessages, 
-    GatewayIntentBits.MessageContent
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
   ],
-  partials: [Partials.Channel, Partials.Message]
+  partials: [Partials.Channel, Partials.Message],
 });
 
 discordClient.once("ready", () => {
@@ -68,6 +68,36 @@ discordClient.on("messageCreate", async (message) => {
         history?.length > 0 ? history : "## No chat history found."
       );
     await message.channel.send({ embeds: [embeds] });
+    return;
+  }
+
+  if (message.content.trim() === "/deleteDM") {
+    try {
+      // Open a DM channel with the user
+      const dmChannel = await message.author.createDM();
+
+      // Fetch the most recent messages from the DM channel
+      const messages = await dmChannel.messages.fetch({ limit: 100 });
+
+      // Find the specific message sent by the bot
+      const botMessage = messages.find(
+        (msg) => msg.author.id === discordClient.user.id
+      );
+
+      if (botMessage) {
+        // Delete the bot's message
+        await botMessage.delete();
+        if (process.env.NODE_ENV === "development") {
+          console.log("Previous DM deleted successfully!");
+        }
+      } else {
+        if (process.env.NODE_ENV === "development") {
+          console.log("No previous DM found.");
+        }
+      }
+    } catch (error) {
+      console.error("Failed to delete the previous DM:", error);
+    }
     return;
   }
 
@@ -122,9 +152,11 @@ discordClient.on("messageCreate", async (message) => {
 // Log in to Discord with your bot token
 discordClient.login(DISCORD_TOKEN);
 
-http.createServer((req, res) => {
-  res.end('Bot is running');
-}).listen(process.env.PORT || 3000);
+http
+  .createServer((req, res) => {
+    res.end("Bot is running");
+  })
+  .listen(process.env.PORT || 3000);
 
 const processStream = async (sses, message) => {
   let isThinking = false;
