@@ -20,6 +20,17 @@ const azureClient = new ModelClient(
   new AzureKeyCredential(AZURE_KEY)
 );
 
+const systemMessage = {
+  role: "system",
+  content: `You are a helpful assistant. 
+  RULE:
+  You must use your reasoning capability to provide answer to users. Your reasoning content is included between <think> and </think>.
+  You should avoid using markdown table syntax in your response because user's client can't render markdown table. You should use alternative syntax to express the same information.`,
+};
+const chatHistory = {};
+let typingInterval;
+let thinkingStart;
+
 // Initialize the Discord client with the necessary intents
 const discordClient = new Client({
   intents: [
@@ -34,14 +45,6 @@ const discordClient = new Client({
 discordClient.once("ready", () => {
   console.log(`Logged in as ${discordClient.user.tag}`);
 });
-
-const systemMessage = {
-  role: "system",
-  content: `You are a helpful assistant. You must use your reasoning capability to provide answer to users. Your reasoning content is included between <think> and </think>.`,
-};
-const chatHistory = {};
-let typingInterval;
-let thinkingStart;
 
 // Listen for messages on Discord
 discordClient.on("messageCreate", async (message) => {
@@ -72,6 +75,7 @@ const defaultMessageHandler = async (message) => {
   if (message.content.startsWith("/clear")) {
     chatHistory[username] = [systemMessage];
     message.channel.send("Chat history cleared.");
+    console.log(`Chat history cleared for ${username}`);
     return;
   }
 
@@ -86,6 +90,7 @@ const defaultMessageHandler = async (message) => {
         history?.length > 0 ? history : "## No chat history found."
       );
     await message.channel.send({ embeds: [embeds] });
+    console.log(`Chat history sent for ${username}`);
     return;
   }
 
@@ -106,11 +111,11 @@ const defaultMessageHandler = async (message) => {
         // Delete the bot's message
         await botMessage.delete();
         if (process.env.NODE_ENV === "development") {
-          console.log("Previous DM deleted successfully!");
+          console.log(`Previous DM deleted for ${username}`);
         }
       } else {
         if (process.env.NODE_ENV === "development") {
-          console.log("No previous DM found.");
+          console.log(`No previous DM found. for ${username}`);
         }
       }
     } catch (error) {
@@ -142,11 +147,16 @@ const defaultMessageHandler = async (message) => {
   chatHistory[username].push({ role: "user", content: userPrompt });
 
   if (process.env.NODE_ENV === "development") {
-    console.log(`user ${username}: `, userPrompt);
+    console.log(
+      `user ${username}: ${userPrompt}
+chat history length: ${chatHistory[username].length}`
+    );
   } else {
-    console.log(`user ${username}: [hidden]`);
+    console.log(
+      `user ${username}: [hidden]
+chat history length: ${chatHistory[username].length}`
+    );
   }
-  console.log("chat history length: ", chatHistory[username].length);
 
   try {
     // Call the Azure LLM API using the Azure SDK
@@ -177,6 +187,7 @@ const processStream = async (sses, message) => {
   let responseMessage = "";
   let lastMessage;
   let completeMessage = "";
+  
   for await (const event of sses) {
     if (event.data === "[DONE]") {
       lastMessage.edit(responseMessage);
@@ -241,11 +252,5 @@ const processStream = async (sses, message) => {
   }
 };
 
-const throwEmptyError = (content) => {
-  if (!content) {
-    throw new Error("Response is empty");
-  }
-};
-
 const shouldUpdateMessage = (message) =>
-  message.length % 300 > 0 && message.length % 300 < 20;
+  message.length % 100 > 0 && message.length % 100 < 5;
