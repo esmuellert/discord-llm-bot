@@ -1,5 +1,5 @@
 // index.js
-import { Client, GatewayIntentBits, EmbedBuilder } from "discord.js";
+import { Client, GatewayIntentBits, EmbedBuilder, Partials } from "discord.js";
 import ModelClient from "@azure-rest/ai-inference";
 import { AzureKeyCredential } from "@azure/core-auth";
 import dotenv from "dotenv";
@@ -23,10 +23,12 @@ const azureClient = new ModelClient(
 // Initialize the Discord client with the necessary intents
 const discordClient = new Client({
   intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.DirectMessages, // Required for DMs
+    GatewayIntentBits.Guilds, 
+    GatewayIntentBits.GuildMessages, 
+    GatewayIntentBits.MessageContent
   ],
+  partials: [Partials.Channel, Partials.Message]
 });
 
 discordClient.once("ready", () => {
